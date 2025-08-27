@@ -4,6 +4,7 @@ import sys
 import yaml
 import numpy as np
 import pandas as pd
+import time 
 from datetime import datetime
 
 import torch
@@ -11,7 +12,7 @@ from torch import nn
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import CosineAnnealingLR
-from sklearn.metrics import roc_auc_score, mean_squared_error, mean_absolute_error
+from sklearn.metrics import roc_auc_score, mean_squared_error, mean_absolute_error, f1_score, confusion_matrix
 
 from dataset.dataset_test import MolTestDatasetWrapper
 
@@ -60,6 +61,8 @@ class FineTune(object):
     def __init__(self, dataset, config):
         self.config = config
         self.device = self._get_device()
+
+        self.running_pred_list = []
 
         current_time = datetime.now().strftime('%b%d_%H-%M-%S')
         dir_name = current_time + '_' + config['task_name'] + '_' + config['dataset']['target']
@@ -251,6 +254,14 @@ class FineTune(object):
             predictions = np.array(predictions)
             labels = np.array(labels)
             roc_auc = roc_auc_score(labels, predictions[:,1])
+
+            # print("LABELS")
+            # print(labels)
+
+            # print("PREDICTIONS")
+            # print(predictions)
+            # time.sleep(4)
+
             print('Validation loss:', valid_loss, 'ROC AUC:', roc_auc)
             return valid_loss, roc_auc
 
@@ -306,16 +317,100 @@ class FineTune(object):
 
         elif self.config['dataset']['task'] == 'classification': 
             predictions = np.array(predictions)
+            print("PREDICTIONS")
             labels = np.array(labels)
             self.roc_auc = roc_auc_score(labels, predictions[:,1])
+
+            binary_pred_list = []
+
+            for prediction in predictions:
+                if prediction >= .5:
+                    binary_pred_list.append(1)
+                else:
+                    binary_pred_list.append(0)
+            
+            self.f1_score = f1_score(labels, binary_pred_list)
+
+            cm = confusion_matrix(labels, binary_pred_list, labels = [0,1])
+
+            tn,fp,fn,tp = cm.ravel()
+
+            self.sensitivity = (tp)/(tp+fn)
+            self.specificity = (tn)/(tn+fp)
+
+            mcc_numerator = ((tp*tn)-(fp*fn))
+            mcc_denom = (tp+fp)*(tp+fn)*(tn+fp)+(tn+fn)
+
+            if mcc_denom == 0:
+                self.mcc = 0
+            else:
+                self.mcc = mcc_numerator/mcc_denom
+
             print('Test loss:', test_loss, 'Test ROC AUC:', self.roc_auc)
 
 
 def main(config):
-    dataset = MolTestDatasetWrapper(config['batch_size'], **config['dataset'])
+    #roc_auc mean and SD, f1 score mean and SD, sensitivity mean and SD, specificity mean and SD, MCC mean and SD
+    test_roc_auc_list = []
+    test_f1_list = []
+    test_mcc_list = []
+    test_sensitivity_list = []
+    test_specificity_list = []
 
-    fine_tune = FineTune(dataset, config)
-    fine_tune.train()
+    running_auc = 0
+    running_f1 = 0
+    running_mcc = 0
+    running_sensitivity = 0
+    running_specificity = 0
+
+    test_iterations = 5
+    #dataset = MolTestDatasetWrapper(config['batch_size'], **config['dataset'])
+
+    for i in range (test_iterations):
+        dataset = MolTestDatasetWrapper(config['batch_size'], **config['dataset'])
+
+        fine_tune = FineTune(dataset, config)
+        fine_tune.train()
+
+        print("SAVED TEST AUC_ROC")
+        test_roc_auc_list.append(fine_tune.roc_auc)
+        test_f1_list.append(fine_tune.f1_score)
+        test_mcc_list.append(fine_tune.mcc)
+        test_sensitivity_list.append(fine_tune.sensitivity)
+        test_specificity_list.append(fine_tune.specificity)
+
+    for auc in test_roc_auc_list:
+        running_auc += auc
+
+    for f1 in test_f1_list:
+        running_f1 += f1
+
+    for mcc in test_mcc_list:
+        running_mcc += mcc
+
+    for sens in test_sensitivity_list:
+        running_sensitivity += sens
+
+    for spec in test_specificity_list:
+        running_specificity += spec
+
+    f1_mean = running_f1 / len(test_f1_list)
+    mcc_mean = running_mcc / len(test_mcc_list)
+    sens_mean = running_sensitivity / len(test_sensitivity_list)
+    spec_mean = running_specificity / len(test_specificity_list)
+    auc_mean = running_auc / len(test_roc_auc_list)
+
+    f1_std = np.std(test_f1_list)
+    mcc_std = np.std(test_mcc_list)
+    sens_std = np.std(test_sensitivity_list)
+    spec_std = np.std(test_specificity_list)
+    auc_std = np.std(test_roc_auc_list)
+
+    print("AUC_ROC: " + str(auc_mean) + "+- " + str(auc_std))
+    print("MCC: " + str(mcc_mean) + "+- " + str(mcc_std))
+    print("F1: " + str(f1_mean) + "+- " + str(f1_std))
+    print("SENSITIVITY: " + str(sens_mean) + "+- " + str(sens_std))
+    print("Specificity: " + str(spec_mean) + "+- " + str(spec_std))
     
     if config['dataset']['task'] == 'classification':
         return fine_tune.roc_auc

@@ -111,8 +111,8 @@ def read_smiles(data_path, target, task):
 
 
 class MolTestDataset(Dataset):
-    def __init__(self, data_path, target, task):
-        super(Dataset, self).__init__()
+    def __init__(self, data_path, target, task, transform=None, pre_transform=None):
+        super().__init__(root = None, transform=transform, pre_transform=pre_transform)
         self.smiles_data, self.labels = read_smiles(data_path, target, task)
         self.task = task
 
@@ -121,7 +121,7 @@ class MolTestDataset(Dataset):
             self.conversion = 27.211386246
             print(target, 'Unit conversion needed!')
 
-    def __getitem__(self, index):
+    def get(self, index):
         mol = Chem.MolFromSmiles(self.smiles_data[index])
         mol = Chem.AddHs(mol)
 
@@ -163,7 +163,7 @@ class MolTestDataset(Dataset):
         data = Data(x=x, y=y, edge_index=edge_index, edge_attr=edge_attr)
         return data
 
-    def __len__(self):
+    def len(self):
         return len(self.smiles_data)
 
 
