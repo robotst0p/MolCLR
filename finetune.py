@@ -5,6 +5,7 @@ import yaml
 import numpy as np
 import pandas as pd
 import time 
+import math
 from datetime import datetime
 
 import torch
@@ -317,13 +318,12 @@ class FineTune(object):
 
         elif self.config['dataset']['task'] == 'classification': 
             predictions = np.array(predictions)
-            print("PREDICTIONS")
             labels = np.array(labels)
             self.roc_auc = roc_auc_score(labels, predictions[:,1])
 
             binary_pred_list = []
 
-            for prediction in predictions:
+            for prediction in predictions[:,1]:
                 if prediction >= .5:
                     binary_pred_list.append(1)
                 else:
@@ -344,7 +344,7 @@ class FineTune(object):
             if mcc_denom == 0:
                 self.mcc = 0
             else:
-                self.mcc = mcc_numerator/mcc_denom
+                self.mcc = mcc_numerator/ math.sqrt(mcc_denom)
 
             print('Test loss:', test_loss, 'Test ROC AUC:', self.roc_auc)
 
@@ -406,11 +406,11 @@ def main(config):
     spec_std = np.std(test_specificity_list)
     auc_std = np.std(test_roc_auc_list)
 
-    print("AUC_ROC: " + str(auc_mean) + "+- " + str(auc_std))
-    print("MCC: " + str(mcc_mean) + "+- " + str(mcc_std))
-    print("F1: " + str(f1_mean) + "+- " + str(f1_std))
-    print("SENSITIVITY: " + str(sens_mean) + "+- " + str(sens_std))
-    print("Specificity: " + str(spec_mean) + "+- " + str(spec_std))
+    print("AUC_ROC: " + str(auc_mean) + " +- " + str(auc_std))
+    print("MCC: " + str(mcc_mean) + " +- " + str(mcc_std))
+    print("F1: " + str(f1_mean) + " +- " + str(f1_std))
+    print("SENSITIVITY: " + str(sens_mean) + " +- " + str(sens_std))
+    print("Specificity: " + str(spec_mean) + " +- " + str(spec_std))
     
     if config['dataset']['task'] == 'classification':
         return fine_tune.roc_auc
